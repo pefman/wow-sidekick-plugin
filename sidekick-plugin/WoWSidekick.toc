@@ -1,0 +1,9 @@
+## Interface: 110000
+## Title: WoWSidekick
+## Notes: Optical data output via UI lightboxes
+## Description: Transmits real-time game state (HP, resources, distance, levels, etc.) through a visual data protocol using pixel patterns.
+## Author: Developer
+## Version: 1.0
+## SavedVariables: WoWSidekickDB
+
+WoWSidekick.lua
