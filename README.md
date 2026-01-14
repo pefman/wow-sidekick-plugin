@@ -6,10 +6,10 @@ A novel addon that transmits real-time game state through visual lightbox encodi
 
 ## Overview
 
-WoW Sidekick creates a 60-box grid display in the top-left corner of your screen and updates it 20 times per second with encoded game data. Each frame consists of:
+WoW Sidekick creates a 40-box grid display in the top-left corner of your screen and updates it 20 times per second with encoded game data. Each frame consists of:
 
 - **Box 1**: Sync bit (always white) for frame synchronization
-- **Boxes 2-60**: 59 bits of comprehensive combat and character data
+- **Boxes 2-40**: 39 bits of player, target, and direction data
 
 This protocol enables external programs (overlay tools, stream overlays, analysis software) to read game state directly from video capture without requiring WoW API access.
 
@@ -35,7 +35,7 @@ This protocol enables external programs (overlay tools, stream overlays, analysi
 
 ## Data Protocol
 
-Each frame transmits 59 bits of data at 20 Hz (50ms update rate).
+Each frame transmits 39 bits of data at 20 Hz (50ms update rate).
 
 ### Bit Layout
 
@@ -50,13 +50,6 @@ Each frame transmits 59 bits of data at 20 Hz (50ms update rate).
 | 28-32 | Player Level | 0-31 | - |
 | 33-37 | Target Level | 0-31 | - |
 | 38-40 | Player Facing | 0-7 | 8 compass directions (N,NE,E,SE,S,SW,W,NW) |
-| 41 | Target Hostile | 0-1 | Is target an enemy |
-| 42-45 | Nearby Hostiles | 0-15 | Count of enemies nearby |
-| 46-47 | Threat Level | 0-3 | 0=safe, 1=low, 2=medium, 3=high |
-| 48-51 | Target Classification | 0-5 | 0=normal, 1=weak, 2=elite, 3=rare, 4=rareelite, 5=boss |
-| 52 | Target Casting | 0-1 | Is target casting spell |
-| 53-56 | Target Buffs | 0-15 | Count of target buffs |
-| 57-58 | Movement State | 0-3 | 0=ground, 1=mounted, 2=flying |
 
 ### Resources Tracked
 - Mana (casters)
@@ -75,24 +68,6 @@ Player facing direction is encoded as 8 compass points:
 - 5 = Southwest
 - 6 = West
 - 7 = Northwest
-
-### Enemy Detection
-- **Target Hostile**: Indicates if your current target is an enemy
-- **Nearby Hostiles**: Scans all nameplates and counts hostile units
-- **Threat Level**: Your threat status (safe/low/medium/high)
-
-### Target Classification
-Identifies what type of enemy you're facing:
-- 0 = Normal mob
-- 1 = Weak (grey)
-- 2 = Elite
-- 3 = Rare
-- 4 = Rare Elite
-- 5 = Worldboss
-
-### Combat Information
-- **Target Casting**: Indicates if target is casting a spell
-- **Target Buffs**: Number of active buffs on target (0-15)
 
 ## Configuration
 

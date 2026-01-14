@@ -25,8 +25,8 @@ local OFFSET_Y = 0                -- Y offset from top-left (pixels)
 
 -- Grid layout
 local COLS = 20                   -- Number of columns
-local ROWS = 3                    -- Number of rows
-local BOX_COUNT = COLS * ROWS     -- Total boxes: 60
+local ROWS = 2                    -- Number of rows
+local BOX_COUNT = COLS * ROWS     -- Total boxes: 40
 
 -- =========================
 -- STATE
@@ -61,10 +61,10 @@ end
 -- =========================
 -- PAYLOAD BUILDER
 -- =========================
--- Encodes comprehensive game state into 59 data bits.
--- Grid: 60 boxes (20x3) = 1 sync bit + 59 payload bits
+-- Encodes game state into 39 data bits.
+-- Grid: 40 boxes (20x2) = 1 sync bit + 39 payload bits
 --
--- Bit Layout (59 bits total):
+-- Bit Layout (39 bits total):
 --  [0-6]    : Player HP % (0-127)
 --  [7-13]   : Target HP % (0-127)
 --  [14-20]  : Player Resource % (0-127)
@@ -74,13 +74,6 @@ end
 --  [28-32]  : Player Level (0-31)
 --  [33-37]  : Target Level (0-31)
 --  [38-40]  : Player Facing Direction (0-7 compass)
---  [41]     : Target is Hostile (bool)
---  [42-45]  : Nearby Hostile Count (0-15)
---  [46-47]  : Threat Level (0-3)
---  [48-51]  : Unit Classification (0-15)
---  [52]     : Target is Casting (bool)
---  [53-56]  : Target Buff Count (0-15)
---  [57-58]  : Movement State (0=ground, 1=mounted, 2=flying)
 local function buildPayload()
     local bits = {}
 
@@ -140,99 +133,9 @@ local function buildPayload()
     local facing = 0
     local playerFacing = GetPlayerFacing()
     if playerFacing then
-        -- Convert radians (0-2π) to 8 directions
         facing = math.floor((playerFacing / (2 * math.pi)) * 8) % 8
     end
     for _, b in ipairs(valueToBits(facing, 3)) do bits[#bits + 1] = b end
-
-    -- [41] Target is Hostile (1 bit)
-    local targetHostile = 0
-    if UnitExists("target") then
-        local reaction = UnitReaction("player", "target")
-        if reaction and reaction < 4 then  -- < 4 = hostile
-            targetHostile = 1
-        end
-    end
-    bits[#bits + 1] = targetHostile
-
-    -- [42-45] Nearby Hostile Count (4 bits: 0-15)
-    local hostileCount = 0
-    for i = 1, 40 do
-        local unit = "nameplate" .. i
-        if UnitExists(unit) then
-            local reaction = UnitReaction("player", unit)
-            if reaction and reaction < 4 then
-                hostileCount = hostileCount + 1
-            end
-        end
-    end
-    if hostileCount > 15 then hostileCount = 15 end
-    for _, b in ipairs(valueToBits(hostileCount, 4)) do bits[#bits + 1] = b end
-
-    -- [46-47] Threat Level (2 bits)
-    -- 0=not threatening, 1=low, 2=medium, 3=high
-    local threatLevel = 0
-    if UnitExists("target") then
-        local threat = UnitThreatSituation("player")
-        if threat then
-            threatLevel = math.min(3, threat)
-        end
-    end
-    for _, b in ipairs(valueToBits(threatLevel, 2)) do bits[#bits + 1] = b end
-
-    -- [48-51] Unit Classification (4 bits)
-    -- 0=normal, 1=weak, 2=elite, 3=rare, 4=rareelite, 5=boss
-    local classification = 0
-    if UnitExists("target") then
-        local classif = UnitClassification("target")
-        if classif == "worldboss" then
-            classification = 5
-        elseif classif == "rareelite" then
-            classification = 4
-        elseif classif == "rare" then
-            classification = 3
-        elseif classif == "elite" then
-            classification = 2
-        elseif classif == "minus" then
-            classification = 1
-        else
-            classification = 0
-        end
-    end
-    for _, b in ipairs(valueToBits(classification, 4)) do bits[#bits + 1] = b end
-
-    -- [52] Target is Casting (1 bit)
-    local isCasting = 0
-    if UnitExists("target") then
-        local castingName = UnitCastingInfo("target")
-        if castingName then
-            isCasting = 1
-        end
-    end
-    bits[#bits + 1] = isCasting
-
-    -- [53-56] Target Buff Count (4 bits: 0-15)
-    local targetBuffCount = 0
-    if UnitExists("target") then
-        for i = 1, 40 do
-            if select(1, UnitBuff("target", i)) then
-                targetBuffCount = targetBuffCount + 1
-            end
-            if targetBuffCount >= 15 then break end
-        end
-    end
-    for _, b in ipairs(valueToBits(targetBuffCount, 4)) do bits[#bits + 1] = b end
-
-    -- [57-58] Movement State (2 bits)
-    local movement = 0
-    if IsFlying() then
-        movement = 2
-    elseif IsMounted() then
-        movement = 1
-    else
-        movement = 0
-    end
-    for _, b in ipairs(valueToBits(movement, 2)) do bits[#bits + 1] = b end
 
     return bits
 end
@@ -242,9 +145,9 @@ end
 -- =========================
 -- Frames the payload data with sync bit for reliable decoding.
 -- 
--- Frame Structure (60 bits):
+-- Frame Structure (40 bits):
 -- Box 1     : Sync bit (always 1 = white)
--- Boxes 2-60: 59 data bits from payload
+-- Boxes 2-40: 39 data bits from payload
 --
 -- The sync bit allows external decoders to synchronize and
 -- detect frame boundaries in the optical stream.
@@ -254,8 +157,8 @@ local function encodeFrame(payloadBits)
     -- Sync bit (always white = 1) for frame synchronization
     bits[1] = 1
 
-    -- Payload data (59 bits, using ALL available space)
-    for i = 1, 59 do
+    -- Payload data (39 bits, using ALL available space)
+    for i = 1, 39 do
         bits[i + 1] = payloadBits[i] or 0
     end
 
