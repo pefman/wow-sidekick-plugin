@@ -25,8 +25,8 @@ local OFFSET_Y = 0                -- Y offset from top-left (pixels)
 
 -- Grid layout
 local COLS = 20                   -- Number of columns
-local ROWS = 2                    -- Number of rows
-local BOX_COUNT = COLS * ROWS     -- Total boxes: 40
+local ROWS = 3                    -- Number of rows
+local BOX_COUNT = COLS * ROWS     -- Total boxes: 60
 
 -- =========================
 -- STATE
@@ -61,10 +61,10 @@ end
 -- =========================
 -- PAYLOAD BUILDER
 -- =========================
--- Encodes game state into 39 data bits.
--- Grid: 40 boxes (20x2) = 1 sync bit + 39 payload bits
+-- Encodes comprehensive game state into 59 data bits.
+-- Grid: 60 boxes (20x3) = 1 sync bit + 59 payload bits
 --
--- Bit Layout (39 bits total):
+-- Bit Layout (59 bits total):
 --  [0-6]    : Player HP % (0-127)
 --  [7-13]   : Target HP % (0-127)
 --  [14-20]  : Player Resource % (0-127)
@@ -74,6 +74,14 @@ end
 --  [28-32]  : Player Level (0-31)
 --  [33-37]  : Target Level (0-31)
 --  [38-40]  : Player Facing Direction (0-7 compass)
+--  [41-44]  : Player Class (0-12)
+--  [45-48]  : Target Class (0-12)
+--  [49-52]  : Player Buffs (0-15)
+--  [53-56]  : Target Debuffs (0-15)
+--  [57]     : Player is Casting (bool)
+--  [58]     : Player in CC/Stunned (bool)
+--  [59]     : Player Stealth (bool)
+--  [60]     : Player PvP Flagged (bool)
 local function buildPayload()
     local bits = {}
 
@@ -129,13 +137,120 @@ local function buildPayload()
     for _, b in ipairs(valueToBits(targetLevel, 5)) do bits[#bits + 1] = b end
 
     -- [38-40] Player Facing Direction (3 bits: 0-7 compass directions)
-    -- 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW
     local facing = 0
     local playerFacing = GetPlayerFacing()
     if playerFacing then
         facing = math.floor((playerFacing / (2 * math.pi)) * 8) % 8
     end
     for _, b in ipairs(valueToBits(facing, 3)) do bits[#bits + 1] = b end
+
+    -- [41-44] Player Class (4 bits: 0-12)
+    -- 0=unknown, 1=warrior, 2=paladin, 3=hunter, 4=rogue, 5=priest, 6=deathknight, 
+    -- 7=shaman, 8=mage, 9=warlock, 10=monk, 11=druid, 12=demonhunter
+    local playerClass = 0
+    local _, classFile = UnitClass("player")
+    if classFile then
+        if classFile == "WARRIOR" then playerClass = 1
+        elseif classFile == "PALADIN" then playerClass = 2
+        elseif classFile == "HUNTER" then playerClass = 3
+        elseif classFile == "ROGUE" then playerClass = 4
+        elseif classFile == "PRIEST" then playerClass = 5
+        elseif classFile == "DEATHKNIGHT" then playerClass = 6
+        elseif classFile == "SHAMAN" then playerClass = 7
+        elseif classFile == "MAGE" then playerClass = 8
+        elseif classFile == "WARLOCK" then playerClass = 9
+        elseif classFile == "MONK" then playerClass = 10
+        elseif classFile == "DRUID" then playerClass = 11
+        elseif classFile == "DEMONHUNTER" then playerClass = 12
+        end
+    end
+    for _, b in ipairs(valueToBits(playerClass, 4)) do bits[#bits + 1] = b end
+
+    -- [45-48] Target Class (4 bits: same mapping)
+    local targetClass = 0
+    if UnitExists("target") then
+        local _, targetClassFile = UnitClass("target")
+        if targetClassFile then
+            if targetClassFile == "WARRIOR" then targetClass = 1
+            elseif targetClassFile == "PALADIN" then targetClass = 2
+            elseif targetClassFile == "HUNTER" then targetClass = 3
+            elseif targetClassFile == "ROGUE" then targetClass = 4
+            elseif targetClassFile == "PRIEST" then targetClass = 5
+            elseif targetClassFile == "DEATHKNIGHT" then targetClass = 6
+            elseif targetClassFile == "SHAMAN" then targetClass = 7
+            elseif targetClassFile == "MAGE" then targetClass = 8
+            elseif targetClassFile == "WARLOCK" then targetClass = 9
+            elseif targetClassFile == "MONK" then targetClass = 10
+            elseif targetClassFile == "DRUID" then targetClass = 11
+            elseif targetClassFile == "DEMONHUNTER" then targetClass = 12
+            end
+        end
+    end
+    for _, b in ipairs(valueToBits(targetClass, 4)) do bits[#bits + 1] = b end
+
+    -- [49-52] Player Buffs (4 bits: 0-15)
+    local playerBuffCount = 0
+    for i = 1, 40 do
+        if select(1, UnitBuff("player", i)) then
+            playerBuffCount = playerBuffCount + 1
+        end
+        if playerBuffCount >= 15 then break end
+    end
+    for _, b in ipairs(valueToBits(playerBuffCount, 4)) do bits[#bits + 1] = b end
+
+    -- [53-56] Target Debuffs (4 bits: 0-15)
+    local targetDebuffCount = 0
+    if UnitExists("target") then
+        for i = 1, 40 do
+            if select(1, UnitDebuff("target", i)) then
+                targetDebuffCount = targetDebuffCount + 1
+            end
+            if targetDebuffCount >= 15 then break end
+        end
+    end
+    for _, b in ipairs(valueToBits(targetDebuffCount, 4)) do bits[#bits + 1] = b end
+
+    -- [57] Player is Casting (1 bit)
+    local isPlayerCasting = 0
+    if UnitCastingInfo("player") then
+        isPlayerCasting = 1
+    end
+    bits[#bits + 1] = isPlayerCasting
+
+    -- [58] Player in CC (1 bit) - check for common crowd control effects
+    local inCC = 0
+    if select(1, UnitCastingInfo("player")) == nil then
+        -- Check for stun/fear/charm/root auras
+        for i = 1, 40 do
+            local auraName, _, _, _, auraType = select(1, UnitDebuff("player", i)), select(5, UnitDebuff("player", i))
+            if auraType == "Stun" or auraType == "Fear" or auraType == "Charm" or auraType == "Root" then
+                inCC = 1
+                break
+            end
+        end
+    end
+    bits[#bits + 1] = inCC
+
+    -- [59] Player Stealth (1 bit)
+    local inStealth = 0
+    for i = 1, 40 do
+        local auraName = select(1, UnitBuff("player", i))
+        if auraName then
+            -- Check for common stealth auras
+            if string.find(auraName or "", "Stealth") or string.find(auraName or "", "Shadow Meld") then
+                inStealth = 1
+                break
+            end
+        end
+    end
+    bits[#bits + 1] = inStealth
+
+    -- [60] Player PvP Flagged (1 bit)
+    local pvpFlag = 0
+    if UnitIsPVP("player") then
+        pvpFlag = 1
+    end
+    bits[#bits + 1] = pvpFlag
 
     return bits
 end
@@ -145,9 +260,9 @@ end
 -- =========================
 -- Frames the payload data with sync bit for reliable decoding.
 -- 
--- Frame Structure (40 bits):
+-- Frame Structure (60 bits):
 -- Box 1     : Sync bit (always 1 = white)
--- Boxes 2-40: 39 data bits from payload
+-- Boxes 2-60: 59 data bits from payload
 --
 -- The sync bit allows external decoders to synchronize and
 -- detect frame boundaries in the optical stream.
@@ -157,8 +272,8 @@ local function encodeFrame(payloadBits)
     -- Sync bit (always white = 1) for frame synchronization
     bits[1] = 1
 
-    -- Payload data (39 bits, using ALL available space)
-    for i = 1, 39 do
+    -- Payload data (59 bits, using ALL available space)
+    for i = 1, 59 do
         bits[i + 1] = payloadBits[i] or 0
     end
 

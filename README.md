@@ -6,12 +6,12 @@ A novel addon that transmits real-time game state through visual lightbox encodi
 
 ## Overview
 
-WoW Sidekick creates a 40-box grid display in the top-left corner of your screen and updates it 20 times per second with encoded game data. Each frame consists of:
+WoW Sidekick creates a 60-box grid display in the top-left corner of your screen and updates it 20 times per second with encoded game data. Each frame consists of:
 
 - **Box 1**: Sync bit (always white) for frame synchronization
-- **Boxes 2-40**: 39 bits of player, target, and direction data
+- **Boxes 2-60**: 59 bits of comprehensive game state and combat data
 
-This protocol enables external programs (overlay tools, stream overlays, analysis software) to read game state directly from video capture without requiring WoW API access.
+This protocol enables external programs (overlay tools, stream overlays, analysis software, AI training) to read game state directly from video capture without requiring WoW API access.
 
 ## Installation
 
@@ -35,7 +35,7 @@ This protocol enables external programs (overlay tools, stream overlays, analysi
 
 ## Data Protocol
 
-Each frame transmits 39 bits of data at 20 Hz (50ms update rate).
+Each frame transmits 59 bits of data at 20 Hz (50ms update rate).
 
 ### Bit Layout
 
@@ -49,7 +49,15 @@ Each frame transmits 39 bits of data at 20 Hz (50ms update rate).
 | 27 | Has Target | 0-1 | Boolean |
 | 28-32 | Player Level | 0-31 | - |
 | 33-37 | Target Level | 0-31 | - |
-| 38-40 | Player Facing | 0-7 | 8 compass directions (N,NE,E,SE,S,SW,W,NW) |
+| 38-40 | Player Facing | 0-7 | 8 compass directions |
+| 41-44 | Player Class | 0-12 | Class ID (1=Warrior...12=DemonHunter) |
+| 45-48 | Target Class | 0-12 | Same class mapping |
+| 49-52 | Player Buffs | 0-15 | Count of active buffs |
+| 53-56 | Target Debuffs | 0-15 | Count of applied debuffs |
+| 57 | Player Casting | 0-1 | Is player casting spell |
+| 58 | Player in CC | 0-1 | Stunned/Feared/Rooted/Charmed |
+| 59 | Player Stealth | 0-1 | In stealth/shadow meld |
+| 60 | Player PvP Flagged | 0-1 | PvP status |
 
 ### Resources Tracked
 - Mana (casters)
@@ -68,6 +76,32 @@ Player facing direction is encoded as 8 compass points:
 - 5 = Southwest
 - 6 = West
 - 7 = Northwest
+
+### Class Mapping
+Both player and target classes are encoded the same way:
+- 0 = Unknown/NPC
+- 1 = Warrior
+- 2 = Paladin
+- 3 = Hunter
+- 4 = Rogue
+- 5 = Priest
+- 6 = Death Knight
+- 7 = Shaman
+- 8 = Mage
+- 9 = Warlock
+- 10 = Monk
+- 11 = Druid
+- 12 = Demon Hunter
+
+### Buff & Debuff Tracking
+- **Player Buffs**: Count of beneficial effects (0-15)
+- **Target Debuffs**: Count of debuffs YOU applied to target (0-15)
+
+### Combat Status Indicators
+- **Player Casting**: Real-time spell casting status
+- **Player in CC**: Crowd control effects (Stun, Fear, Root, Charm)
+- **Player Stealth**: Stealth, Shadow Meld, or similar cloaking effects
+- **PvP Flagged**: Current PvP flag status
 
 ## Configuration
 
