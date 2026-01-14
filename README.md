@@ -6,12 +6,7 @@ A novel addon that transmits real-time game state through visual lightbox encodi
 
 ## Overview
 
-WoW Sidekick creates a 60-box grid display in the top-left corner of your screen and updates it 20 times per second with encoded game data. Each frame consists of:
-
-- **Box 1**: Sync bit (always white) for frame synchronization
-- **Boxes 2-60**: 59 bits of comprehensive game state and combat data
-
-This protocol enables external programs (overlay tools, stream overlays, analysis software, AI training) to read game state directly from video capture without requiring WoW API access.
+WoW Sidekick renders a 200‑box grid (20×5) in the top‑left corner and encodes game state into **8 colors** (3 bits per box). Each frame is a fixed‑length **75‑char JSON array** (600 bits total). External tools can capture the grid and decode the JSON without WoW API access.
 
 ## Installation
 
@@ -35,150 +30,39 @@ This protocol enables external programs (overlay tools, stream overlays, analysi
 
 ## Data Protocol
 
-Each frame transmits 59 bits of data at 20 Hz (50ms update rate).
+The canonical schema is documented in [PROTOCOL.md](PROTOCOL.md). The current protocol is:
 
-### Bit Layout
-
-| Bits | Data | Range | Notes |
-|------|------|-------|-------|
-| 0-6 | Player HP % | 0-127 | 0.78% per bit |
-| 7-13 | Target HP % | 0-127 | 0.78% per bit |
-| 14-20 | Player Resource % | 0-127 | Mana/Energy/Rage/Focus |
-| 21-25 | Distance to Target | 0-31 | ~1 yard per bit |
-| 26 | In Combat | 0-1 | Boolean |
-| 27 | Has Target | 0-1 | Boolean |
-| 28-32 | Player Level | 0-31 | - |
-| 33-37 | Target Level | 0-31 | - |
-| 38-40 | Player Facing | 0-7 | 8 compass directions |
-| 41-44 | Player Class | 0-12 | Class ID (1=Warrior...12=DemonHunter) |
-| 45-48 | Target Class | 0-12 | Same class mapping |
-| 49-52 | Player Buffs | 0-15 | Count of active buffs |
-| 53-56 | Target Debuffs | 0-15 | Count of applied debuffs |
-| 57 | Player Casting | 0-1 | Is player casting spell |
-| 58 | Player in CC | 0-1 | Stunned/Feared/Rooted/Charmed |
-| 59 | Player Stealth | 0-1 | In stealth/shadow meld |
-| 60 | Player PvP Flagged | 0-1 | PvP status |
-
-### Resources Tracked
-- Mana (casters)
-- Energy (rogues, druids)
-- Rage (warriors)
-- Focus (hunters)
-- Any other class resource
-
-### Direction Encoding
-Player facing direction is encoded as 8 compass points:
-- 0 = North
-- 1 = Northeast
-- 2 = East
-- 3 = Southeast
-- 4 = South
-- 5 = Southwest
-- 6 = West
-- 7 = Northwest
-
-### Class Mapping
-Both player and target classes are encoded the same way:
-- 0 = Unknown/NPC
-- 1 = Warrior
-- 2 = Paladin
-- 3 = Hunter
-- 4 = Rogue
-- 5 = Priest
-- 6 = Death Knight
-- 7 = Shaman
-- 8 = Mage
-- 9 = Warlock
-- 10 = Monk
-- 11 = Druid
-- 12 = Demon Hunter
-
-### Buff & Debuff Tracking
-- **Player Buffs**: Count of beneficial effects (0-15)
-- **Target Debuffs**: Count of debuffs YOU applied to target (0-15)
-
-### Combat Status Indicators
-- **Player Casting**: Real-time spell casting status
-- **Player in CC**: Crowd control effects (Stun, Fear, Root, Charm)
-- **Player Stealth**: Stealth, Shadow Meld, or similar cloaking effects
-- **PvP Flagged**: Current PvP flag status
+- **Grid**: 20 columns × 5 rows (200 boxes)
+- **Encoding**: 8 colors → 3 bits per box
+- **Payload**: 75‑char JSON array (600 bits per frame)
+- **Schema version**: 2
 
 ## Configuration
 
-Edit the configuration section in `WoWSidekick.lua` to customize the display:
+Use the in‑game options panel (Interface → AddOns → WoW Sidekick):
 
-```lua
-local FPS = 20                    -- Update frequency (Hz)
-local BOX_SIZE = 5                -- Box size in pixels
-local BOX_GAP_X = 0               -- Horizontal gap
-local BOX_GAP_Y = 0               -- Vertical gap
-local OFFSET_X = 0                -- X offset from screen corner
-local OFFSET_Y = 0                -- Y offset from screen corner
-local COLS = 20                   -- Grid columns
-local ROWS = 2                    -- Grid rows
-```
+- **Enable auto‑loot**
+- **Update rate (FPS)**: 5/10/20/30
+- **Show JSON debug window** (selectable text)
+
+Visual layout settings (box size, offsets, etc.) are still editable in [sidekick-plugin/WoWSidekick.lua](sidekick-plugin/WoWSidekick.lua).
 
 ## Extending the Protocol
 
-To add more data bits:
-
-1. **Increase grid size**: Modify `COLS` and `ROWS` in configuration
-2. **Extend `buildPayload()`**: Add new data collection
-3. **Update `encodeFrame()`**: Include additional payload bits
-4. **Document bit layout**: Update comments with new fields
-
-Example: To transmit spell cooldowns:
-```lua
--- Add to buildPayload()
-local spellCooldown = 0
-if GetSpellCooldown(12345) then
-    spellCooldown = math.min(31, math.floor(GetSpellCooldown(12345)))
-end
-for _, b in ipairs(valueToBits(spellCooldown, 5)) do bits[#bits + 1] = b end
-```
+Update the JSON array order in `buildPayload()` and the schema notes in [PROTOCOL.md](PROTOCOL.md). Keep the JSON length at 75 chars (pad with spaces on the right) so the payload remains 600 bits.
 
 ## External Decoding
 
-To read the protocol from external tools:
-
-1. **Capture video**: Screenshot or stream the addon display
-2. **Identify boxes**: Locate the 40 pixel boxes
-3. **Map colors**: White = 1, Black = 0
-4. **Decode bits**: Convert color sequence to binary
-5. **Parse data**: Extract values using bit layout
-
-### Example Decoder Pseudocode
-
-```python
-def decode_frame(screenshot):
-    sync_bit = get_box_color(screenshot, 1)
-    if sync_bit != 1:
-        return None  # Wait for sync
-    
-    bits = []
-    for i in range(2, 41):
-        bits.append(get_box_color(screenshot, i))
-    
-    player_hp = bits_to_value(bits[0:7])
-    target_hp = bits_to_value(bits[7:14])
-    resources = bits_to_value(bits[14:21])
-    distance = bits_to_value(bits[21:26])
-    # ... etc
-    
-    return {
-        'player_hp': player_hp,
-        'target_hp': target_hp,
-        'distance': distance,
-        # ...
-    }
-```
+1. Capture the grid (20×5 boxes).
+2. Map each box color to a 3‑bit value using the palette in [PROTOCOL.md](PROTOCOL.md).
+3. Concatenate 600 bits (MSB‑first within each 3‑bit value).
+4. Convert to 75 ASCII bytes and parse the JSON array.
 
 ## Performance
 
-- **CPU Impact**: Minimal (~0.1% on modern systems)
-- **Update Rate**: 20 Hz (50ms per frame)
-- **Visual Footprint**: 5×100 pixels (20×2 grid at 5px boxes)
-- **Memory**: <1 MB
+- **CPU Impact**: Minimal on modern systems
+- **Default Update Rate**: 10 FPS (configurable)
+- **Visual Footprint**: 20×5 grid (box size configurable)
 
 ## Troubleshooting
 
@@ -193,9 +77,9 @@ def decode_frame(screenshot):
 - Verify fps is set to valid value
 
 ### External Decoder Not Working
-- Confirm boxes are white/black, not gray or colored
-- Verify capture resolution is high enough (5px boxes minimum)
-- Check frame timing - use 50ms timeout for frame detection
+- Confirm 8‑color palette mapping and 20×5 grid order
+- Verify MSB‑first bit order
+- The JSON payload is exactly 75 bytes (right‑padded with spaces)
 
 ## Future Enhancements
 
